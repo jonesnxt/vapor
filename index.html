@@ -3520,6 +3520,11 @@ function rndstr(len)
 	return ret;
 }
 
+function wordBytes(word)
+{
+	return [(word%256), Math.floor(word/256)];
+}
+
 
 var epochNum = 1385294400;
 var online = false;
@@ -3657,30 +3662,20 @@ $(document).ready(function() {
 
 		txbytes = txbytes.concat(fee);
 		txbytes = txbytes.concat(pad(32, 0)); // ref full hash
-		txbytes = converters.hexStringToByteArray(converters.byteArrayToHexString(txbytes));
-		var signable = txbytes;
 
 		txbytes = txbytes.concat(pad(64, 0)); // signature
 
 		txbytes = txbytes.concat(pad(16, 0)); // ignore everything else
-		var amt = ((new BigInteger($(".lengthl").val()))).toByteArray().reverse();
-		if(amt.length == 1) amt = amt.concat(zeroArray);
+		var amt = $(".lengthl").val();
 		txbytes.push(1);
-		txbytes = txbytes.concat(amt);
+		txbytes = txbytes.concat(wordBytes(amt));
 
+		txbytes = converters.hexStringToByteArray(converters.byteArrayToHexString(txbytes));
 
-		//var blks = 
 		var sig = signBytes(txbytes, $(".passphrasel").val());
 
-		signable = signable.concat(sig);
+		var signable = txbytes.slice(0, 96).concat(sig).concat(txbytes.slice(96+64));
 		
-		signable = signable.concat(pad(16, 0)); // ignore everything else
-		var amt = ((new BigInteger($(".lengthl").val()))).toByteArray().reverse();
-		if(amt.length == 1) amt = amt.concat(zeroArray);
-		signable.push(1);
-		signable = signable.concat(amt);
-
-
 		// now we have a full tx...
 
 		var fulltx = converters.byteArrayToHexString(signable);
