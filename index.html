@@ -3575,6 +3575,7 @@ $(document).ready(function() {
 		rec.set($(".recipient").val());
 		var recipient = (new BigInteger(rec.account_id())).toByteArray().reverse();
 		if(recipient.length == 9) recipient = recipient.slice(0,8);
+		while(recipient.length != 8) recipient = recipient.concat(zeroArray);
 		txbytes = txbytes.concat(recipient);
 		var amount = ((new BigInteger(String(parseInt($(".amount").val()*100000000))))).toByteArray().reverse();
 		if(amount.length == 9) amount = amount.slice(0,8);
@@ -3656,6 +3657,7 @@ $(document).ready(function() {
 		rec.set($(".recipientl").val());
 		var recipient = (new BigInteger(rec.account_id())).toByteArray().reverse();
 		if(recipient.length == 9) recipient = recipient.slice(0,8);
+		while(recipient.length != 8) recipient = recipient.concat(zeroArray);
 		txbytes = txbytes.concat(recipient);
 		var amount = (new BigInteger("0")).toByteArray().reverse();
 		if(amount.length == 9) recip = amount.slice(0,8);
