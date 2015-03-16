@@ -3574,8 +3574,10 @@ $(document).ready(function() {
 		var rec = new NxtAddress();
 		rec.set($(".recipient").val());
 		var recipient = (new BigInteger(rec.account_id())).toByteArray().reverse();
+		if(recipient.length == 9) recipient = recipient.slice(0,8);
 		txbytes = txbytes.concat(recipient);
 		var amount = ((new BigInteger(String(parseInt($(".amount").val()*100000000))))).toByteArray().reverse();
+		if(amount.length == 9) amount = amount.slice(0,8);
 		while(amount.length != 8) amount = amount.concat(zeroArray);
 		txbytes = txbytes.concat(amount);
 		var fee = (converters.int32ToBytes(100000000))
@@ -3653,8 +3655,10 @@ $(document).ready(function() {
 		var rec = new NxtAddress();
 		rec.set($(".recipientl").val());
 		var recipient = (new BigInteger(rec.account_id())).toByteArray().reverse();
+		if(recipient.length == 9) recipient = recipient.slice(0,8);
 		txbytes = txbytes.concat(recipient);
 		var amount = (new BigInteger("0")).toByteArray().reverse();
+		if(amount.length == 9) recip = amount.slice(0,8);
 		while(amount.length != 8) amount = amount.concat(zeroArray);
 		txbytes = txbytes.concat(amount);
 		var fee = (converters.int32ToBytes(100000000))
