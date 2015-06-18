@@ -1,0 +1,942 @@
+;
+
+
+
+var _hash = {
+		init: SHA256_init,
+		update: SHA256_write,
+		getBytes: SHA256_finalize
+	};
+
+function simpleHash(message) {
+		_hash.init();
+		_hash.update(message);
+		return _hash.getBytes();
+	}
+
+function byteArrayToBigInteger(byteArray, startIndex) {
+		var value = new BigInteger("0", 10);
+		var temp1, temp2;
+		for (var i = byteArray.length - 1; i >= 0; i--) {
+			temp1 = value.multiply(new BigInteger("256", 10));
+			temp2 = temp1.add(new BigInteger(byteArray[i].toString(10), 10));
+			value = temp2;
+		}
+
+		return value;
+	}
+
+	 function getPublicKey(secretPhrase) {
+		
+			var secretPhraseBytes = converters.stringToByteArray(secretPhrase);
+			var digest = simpleHash(secretPhraseBytes);
+			return curve25519.keygen(digest).p;
+	}
+
+
+	 function getAccountIdFromPublicKey(publicKey, RSFormat) {
+		var hex = converters.hexStringToByteArray(publicKey);
+
+		_hash.init();
+		_hash.update(hex);
+
+		var account = _hash.getBytes();
+
+		account = converters.byteArrayToHexString(account);
+
+		var slice = (converters.hexStringToByteArray(account)).slice(0, 8);
+
+		var accountId = byteArrayToBigInteger(slice).toString();
+
+		if (RSFormat) {
+			var address = new NxtAddress();
+
+			if (address.set(accountId)) {
+				return address.toString();
+			} else {
+				return "";
+			}
+		} else {
+			return accountId;
+		}
+	}
+
+	function areByteArraysEqual(bytes1, bytes2) {
+		if (bytes1.length !== bytes2.length)
+			return false;
+
+		for (var i = 0; i < bytes1.length; ++i) {
+			if (bytes1[i] !== bytes2[i])
+				return false;
+		}
+
+		return true;
+	}
+
+	
+	 function verifyBytes(signature, message, publicKey) {
+		var signatureBytes = signature;
+		var messageBytes = message;
+		var publicKeyBytes = publicKey;
+		var v = signatureBytes.slice(0, 32);
+		var h = signatureBytes.slice(32);
+		var y = curve25519.verify(v, h, publicKeyBytes);
+
+		var m = simpleHash(messageBytes);
+
+		_hash.init();
+		_hash.update(m);
+		_hash.update(y);
+		var h2 = _hash.getBytes();
+
+		return areByteArraysEqual(h, h2);
+	}
+
+	 function signBytes(message, secretPhrase) {
+		var messageBytes = message;
+		var secretPhraseBytes = converters.stringToByteArray(secretPhrase);
+
+		var digest = simpleHash(secretPhraseBytes);
+		var s = curve25519.keygen(digest).s;
+
+		var m = simpleHash(messageBytes);
+
+		_hash.init();
+		_hash.update(m);
+		_hash.update(s);
+		var x = _hash.getBytes();
+
+		var y = curve25519.keygen(x).p;
+
+		_hash.init();
+		_hash.update(m);
+		_hash.update(y);
+		var h = _hash.getBytes();
+
+		var v = curve25519.sign(h, x, s);
+
+		return (v.concat(h));
+	}
+
+	function toByteArray(e){for(var a=[0,0,0,0],t=0;t<a.length;t++){var r=255&e;a[t]=r,e=(e-r)/256}return a}
+
+	function createToken(e,a){var t=converters.stringToHexString(e),r=converters.hexStringToByteArray(t),n=[];n=r.concat(getPublicKey(a));var s=Math.round(+new Date/1e3),y=s-1385294400,o=toByteArray(y);n=n.concat(o);var c=[];c=getPublicKey(a).concat(o);var u=signBytes(n,a);c=c.concat(u);for(var i="",J=0;100>J;J+=5){var p=[];p[0]=255&c[J],p[1]=255&c[J+1],p[2]=255&c[J+2],p[3]=255&c[J+3],p[4]=255&c[J+4];var g=byteArrayToBigInteger(p);32>g?i+="0000000":1024>g?i+="000000":32768>g?i+="00000":1048576>g?i+="0000":33554432>g?i+="000":1073741824>g?i+="00":34359738368>g&&(i+="0"),i+=g.toString(32)}return i}
+	function parseToken(e,a){for(var t=converters.stringToByteArray(a),r=[],n=0,s=0;n<e.length;n+=8,s+=5){var y=new BigInteger(e.substring(n,n+8),32),o=converters.hexStringToByteArray(y.toRadix(16));r[s]=o[4],r[s+1]=o[3],r[s+2]=o[2],r[s+3]=o[1],r[s+4]=o[0]}160!=n&&new Error("tokenString parsed to invalid size");var c=[];c=r.slice(0,32);var u=[r[32],r[33],r[34],r[35]],i=toIntVal(u),J=r.slice(36,100),p=t.concat(r.slice(0,36)),g=verifyBytes(J,p,c),d={};return d.isValid=g,d.timestamp=i,d.publicKey=converters.byteArrayToHexString(c),d.accountRS=publicKeyToAccountId(d.publicKey,!0),d};
+
+
+function passphrase() 
+{
+	var str = "";
+	var random = new Uint32Array(12);
+	crypto.getRandomValues(random);
+	for(var a=0;a<12;a++)
+	{
+		if(a!=0) str += " ";
+		str += words[random[a]%words.length];
+	}
+	return str;
+}
+
+function pad(length, val) {
+    var array = [];
+    for (var i = 0; i < length; i++) {
+        array[i] = val;
+    }
+    return array;
+}
+
+function wordBytes(word)
+{
+	return [(word%256), Math.floor(word/256)];
+}
+
+function transaction(type, subtype, recip, amt, passphrase, message)
+{
+		// what to do... ok so lets generate the tx bytes
+
+	var bytes = [];
+	bytes.push(type);
+	bytes.push((1 << 4) + subtype);
+	var timestamp = Math.floor(Date.now() / 1000) - 1385294400;
+	bytes = bytes.concat(converters.int32ToBytes(timestamp));
+	bytes.push(160);
+	bytes.push(5); // deadline
+	bytes = bytes.concat(getPublicKey(passphrase));
+
+	var rec = new NxtAddress();
+	rec.set(recip);
+	var recipient = (new BigInteger(rec.account_id())).toByteArray().reverse();
+	if(recipient.length == 9) recipient = recipient.slice(0,8);
+	while(recipient.length != 8) recipient.push(0);
+	bytes = bytes.concat(recipient);
+
+	var amount = ((new BigInteger(String(parseInt(amt*100000000))))).toByteArray().reverse();
+	if(amount.length == 9) amount = amount.slice(0,8);
+	while(amount.length != 8) amount.push(0);
+	bytes = bytes.concat(amount);
+
+	var fee = (converters.int32ToBytes(100000000))
+	while(fee.length != 8) fee.push(0);
+	bytes = bytes.concat(fee);
+
+	bytes = bytes.concat(pad(32, 0)); // ref full hash
+	bytes = bytes.concat(pad(64, 0));
+
+	// message things here
+	if(!message)
+	{
+		bytes = bytes.concat(pad(16));
+	}
+	else
+	{
+		bytes.push(1);
+		bytes = bytes.concat(pad(15));
+	}
+	return bytes;
+}
+
+function addMessage(bytes, message)
+{
+	bytes.push(1); // version
+	bytes = bytes.concat(wordBytes(message.length));
+	bytes.push(0);
+	bytes.push(128);
+	bytes = bytes.concat(converters.stringToByteArray(message));
+	return bytes;
+}
+
+function sign(bytes, passphrase)
+{
+	bytes = converters.hexStringToByteArray(converters.byteArrayToHexString(bytes)); // fix signs
+	var sig = signBytes(bytes, PASSPHRASE);
+
+	return bytes.slice(0, 96).concat(sig).concat(bytes.slice(96+64));
+}
+
+// formatJson() :: formats and indents JSON string
+function formatJson(val) {
+	var retval = '';
+	var str = val;
+    var pos = 0;
+    var strLen = str.length;
+	var indentStr = '&nbsp;&nbsp;&nbsp;&nbsp;';
+    var newLine = '<br />';
+	var char = '';
+	
+	for (var i=0; i<strLen; i++) {
+		char = str.substring(i,i+1);
+		
+		if (char == '}' || char == ']') {
+			retval = retval + newLine;
+			pos = pos - 1;
+			
+			for (var j=0; j<pos; j++) {
+				retval = retval + indentStr;
+			}
+		}
+		
+		retval = retval + char;	
+		
+		if (char == '{' || char == '[' || char == ',') {
+			retval = retval + newLine;
+			
+			if (char == '{' || char == '[') {
+				pos = pos + 1;
+			}
+			
+			for (var k=0; k<pos; k++) {
+				retval = retval + indentStr;
+			}
+		}
+	}
+	
+	return retval;
+}
+
+
+
+var PASSPHRASE = "";
+var rs = "";
+
+
+$("document").ready(function() {
+
+	$("#modal_new").on("show.bs.modal", genaddr);
+	$("#randomize").click(genaddr);
+
+		function genaddr() {
+		var secret = passphrase();
+		var pub = converters.byteArrayToHexString(getPublicKey(secret));
+		var acc = getAccountIdFromPublicKey(pub, true);
+		$("#modal_new_secret").val(secret);
+		$("#modal_new_public_key").val(pub);
+		$("#modal_new_address").val(acc);
+	};
+
+	$("#modal_new_secret").on("input propertychange", function() {
+		var secret = $("#modal_new_secret").val();
+		var pub = converters.byteArrayToHexString(getPublicKey(secret));
+		var acc = getAccountIdFromPublicKey(pub, true);
+		$("#modal_new_secret").val(secret);
+		$("#modal_new_public_key").val(pub);
+		$("#modal_new_address").val(acc);
+
+	})
+
+
+	$("#modal_login").on("show.bs.modal", function() {
+		setTimeout(function() {$("#modal_login_passphrase").focus();}, 700);
+	})
+
+	$(".word").on("input propertychange", function() {
+		var secr = $(this).val().split(" ");
+		for(var b=0;b<secr.length;b++)
+		{
+			var found = false;
+			for(var a=0;a<words.length;a++)
+			{
+				if(words[a] == secr[b])
+				{
+					found = true;
+					console.log("word");
+					$("#bit_"+(b+1)).css("background-color", "#23EE56");
+				}
+			}
+			if(!found)
+			{
+				if(secr.length > b+1)
+				{
+					$("#bit_"+(b+1)).css("background-color","#EE5623");
+				}
+				else
+				{
+					$("#bit_"+(b+1)).css("background-color","#DDD");
+				}
+			}
+		}
+
+		if(secr.length < 12)
+		{
+			for(var a=12; a>secr.length;a--)
+			{
+				$("#bit_"+(a)).css("background-color", "#EEE");
+			}
+		}
+		
+		var acc = getAccountIdFromPublicKey(converters.byteArrayToHexString(getPublicKey($(this).val())), true);
+		$("#modal_login_address").val(acc);
+	});
+
+	$("#asset_name").on("input propertychange", function() {
+		var name = $("#asset_name").val();
+		var matches = [];
+		for(var a=0;a<assetdata.length;a++)
+		{
+			if(name.toLowerCase() == assetdata[a].name.toLowerCase())
+			{
+				// found one
+				matches.push(assetdata[a]);
+			}
+		}
+		if(matches.length == 0)
+		{
+			// no assets found
+			$(this).parent().addClass("has-error");
+			$(this).parent().removeClass("has-success");
+			$("#asset_help").text("No asset is found under that name.");
+			$("#asset_select").attr("disabled", "disabled");
+		}
+		else if(matches.length == 1)
+		{
+			// wonderful, this is correct
+			$(this).parent().removeClass("has-error");
+			$(this).parent().addClass("has-success");
+			$("#asset_help").text("Found 1 asset with this name.");
+			$("#asset_select").removeAttr("disabled");
+			var row = "<div class='radio'><label><input type='radio' name='found' id='"+matches[0].id+"' value='"+matches[0].id+"' data-decimals='"+matches[0].decimals+"'>";
+			row += matches[0].id+" - Trades: "+matches[0].trades+"<br/>Description: "+matches[0].description;
+			row += "</label></div>";
+
+			$("#modal_select_body").empty().append(row);
+
+		}
+		else
+		{
+			// ouch, now you need to choose.....
+			console.log(matches)
+			$("#asset_help").text("Found "+matches.length+" assets with this name. Click SELECT to choose which one to use.");
+			$(this).parent().removeClass("has-error");
+			$(this).parent().addClass("has-success");
+			$("#asset_select").removeAttr("disabled");
+			$("#modal_select_body").empty();
+			for(var a=0;a<matches.length;a++)
+			{
+				var row = "<div class='radio'><label><input type='radio' name='found' id='"+matches[a].id+"' value='"+matches[a].id+"' data-decimals='"+matches[a].decimals+"'>";
+				row += matches[a].id+" - Trades: "+matches[a].trades+"<br/>Description: "+matches[a].description;
+				row += "</label></div>";
+
+				$("#modal_select_body").append(row);
+			}
+		}
+	})
+
+	$("#asset_select").click(function() {
+		$("#modal_select").modal("show");
+	})
+
+
+	$("#modal_cast_bytes").on("input propertychange", function() {
+		$.post("http://jnxt.org:7876/nxt?requestType=parseTransaction", {"transactionBytes":$("#modal_cast_bytes").val()}, function(data) {
+			$("#modal_cast_info").html(formatJson(data));
+		}, 'text');
+	});
+
+	$("#modal_cast_cast").click(function() {
+		// time to broadcast...
+		$.post("http://jnxt.org:7876/nxt?requestType=broadcastTransaction", {"transactionBytes":$("#modal_cast_bytes").val()}, function(data) {
+			$("#modal_resp_data").html(formatJson(data));
+			$("#modal_resp").modal("show");
+		}, 'text');
+	})
+
+	$("#modal_select_select").click(function() {
+		var id = $("input[name=found]:checked").attr("id");
+		var decimals = $("input[name=found]:checked").data("decimals");
+		$("#asset_name").val(id);
+		$("#asset_decimals").val(decimals);
+		console.log(decimals);
+		$(this).parent().removeClass("has-error");
+		$(this).parent().addClass("has-success");
+		$("#asset_help").text("Asset ID successfully located, ready to send.")
+	})
+
+
+	$("#modal_login_login").click(function() {
+		PASSPHRASE = $("#modal_login_passphrase").val();
+		rs = $("#modal_login_address").val();
+		$("#screen_intro").css("display", "none");
+		$("#screen_txs").css("display", "inline");
+		$("#address").text(rs);
+	});
+
+	$("#money_create").click(function() {
+		var recipient = $("#money_recipient").val();
+		var amount = $("#money_amount").val();
+		var message = $("#money_message").val();
+		var bytes = transaction(0, 0, recipient, amount, PASSPHRASE, message.length != 0);
+
+		if(message.length !=0)
+		{
+			bytes = addMessage(bytes, message);
+		}
+
+		bytes = sign(bytes, PASSPHRASE);
+		bytes = converters.byteArrayToHexString(bytes);
+
+		$("#modal_tx_bytes").val(bytes);
+		$("#modal_tx_qr").empty().qrcode({"text":bytes,"width":512,"height":512})
+
+		$("#modal_tx").modal("show");
+	});
+
+	$("#message_create").click(function() {
+		var recipient = $("#message_recipient").val();
+		var message = $("#message_message").val();
+		var bytes = transaction(1, 0, recipient, 0, PASSPHRASE, true);
+		bytes = addMessage(bytes, message);
+		bytes = sign(bytes, PASSPHRASE);
+		bytes = converters.byteArrayToHexString(bytes);
+
+		$("#modal_tx_bytes").val(bytes);
+		$("#modal_tx_qr").empty().qrcode({"text":bytes,"width":512,"height":512})
+
+		$("#modal_tx").modal("show");
+	});
+
+	$("#asset_create").click(function() {
+		var recipient = $("#asset_recipient").val();
+		var id = $("#asset_name").val();
+		var amount = $("#asset_amount").val();
+		var message = $("#asset_message").val();
+		var decimals = $("#asset_decimals").val();
+		console.log(decimals);
+		var bytes = transaction(2,1,recipient,0, PASSPHRASE, message.length!=0);
+		bytes.push(1); // version...
+
+		var idbytes = (new BigInteger(id)).toByteArray().reverse();
+		if(idbytes.length > 8) idbytes = idbytes.slice(8);
+		while(idbytes.length < 8) idbytes.push(0);
+		bytes = bytes.concat(idbytes);
+
+		var amtbytes = (new BigInteger(String(Number(amount)*Math.pow(10, decimals)))).toByteArray().reverse();
+		if(amtbytes.length > 8) amtbytes = amtbytes.slice(8);
+		while(amtbytes.length < 8) amtbytes.push(0);
+		bytes = bytes.concat(amtbytes);
+
+		if(message.length !=0)
+		{
+			bytes = addMessage(bytes, message);
+		}
+
+		bytes = sign(bytes, PASSPHRASE);
+		bytes = converters.byteArrayToHexString(bytes);
+
+		$("#modal_tx_bytes").val(bytes);
+		$("#modal_tx_qr").empty().qrcode({"text":bytes,"width":512,"height":512})
+
+		$("#modal_tx").modal("show");
+	})
+
+	$("#lease_create").click(function() {
+		var recipient = $("#lease_recipient").val();
+		var length = $("#lease_length").val();
+		var message = $("#lease_message").val();
+		var bytes = transaction(4, 0, recipient, 0, PASSPHRASE, message.length != 0);
+		bytes = bytes.concat(1); // version
+		bytes = bytes.concat(wordBytes(length));
+		
+		if(message.length !=0)
+		{
+			bytes = addMessage(bytes, message);
+		}
+
+		bytes = sign(bytes, PASSPHRASE);
+		bytes = converters.byteArrayToHexString(bytes);
+
+		$("#modal_tx_bytes").val(bytes);
+		$("#modal_tx_qr").empty().qrcode({"text":bytes,"width":512,"height":512})
+
+		$("#modal_tx").modal("show");
+	});
+
+	$("#token_create").click(function() {
+		var data = $("#token_data").val();
+		var token = createToken(data, PASSPHRASE);
+
+		$("#modal_token_token").val(token);
+		$("#modal_token_qr").empty().qrcode({"text":token,"width":512,"height":512});
+
+		$("#modal_token").modal("show");
+	})
+
+	$("#sign_create").click(function() {
+		var bytes = converters.hexStringToByteArray($("#sign_data").val());
+		bytes = sign(bytes, PASSPHRASE);
+
+		bytes = converters.byteArrayToHexString(bytes);
+
+
+		$("#modal_tx_bytes").val(bytes);
+		$("#modal_tx_qr").empty().qrcode({"text":bytes,"width":512,"height":512});
+
+		$("#modal_tx").modal("show");
+	});
+
+
+
+})
+
+
+// end user scripts //
+</script>
+<style>
+.word-group {
+	padding-left: 2px;
+	padding-right: 2px;
+	padding-bottom: 8px;
+}
+
+.bit {
+	height: 6px;
+	background-color: #EEE;
+	border-radius: 10px;
+	box-shadow: 1px 1px 1px 1px rgba(30,30,30,0.3);
+}
+
+#download {
+	color: #DFF;
+}
+</style>
+
+</head>
+<body>
+	<div class="container">
+		<h1 class="page-header">Nxt Vapor Wallet</h1>
+		<div class="screen" id="screen_intro">
+			<div class="row">
+				<div class="col-md-10 col-md-offset-1">
+					<div class="alert alert-info">
+						<strong>In order to use this page securely please make sure that you have downloaded this page and your network is offline.</strong>
+						<br/><p class="text-center"><a id="download" href="./" download>Download this page</a></p>
+					</div>
+					<div class="well">
+						<p class="lead">Welcome to Nxt Vapor Wallet, the best offline wallet and cold storage solution for the Nxt network.</p>
+						<dl class="dl-horizontal">
+							<dt>First Time?</dt>
+							<dd>Generate a new cold storage account to begin or log in if you already have one.</dd>
+							<dt>Returning user</dt>
+							<dd>Log in with you 12 word seed to access your account.</dd>
+					</div>
+				</div>
+			</div>
+			<div class="row">
+				<div class="col-md-12 text-center">
+					<div class="btn-group btn-group-lg" role="group">
+						<button type="button" class="btn btn-primary btn-lg" data-toggle="modal" data-target="#modal_new">
+							New Cold Storage Account
+						</button>
+						<button type="button" class="btn btn-primary btn-lg" data-toggle="modal" data-target="#modal_cast">
+							Broadcast Transaction
+						</button>
+						<button type="button" class="btn btn-primary btn-lg" data-toggle="modal" data-target="#modal_login">
+							Log in to Account
+						</button>
+
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="screen" id="screen_txs" style="display:none;">
+			<div class="row">
+				<div class="col-md-8 col-md-offset-2">
+					<div class="well" style="background-color:#FFFFFF;padding:2px">
+					<h2 id="address" style="font-style:italic;text-align:center">NXT-XXXX-XXXX-XXXX-XXXXX</h2>
+				</div>
+				</div>
+			</div>
+			<div class="row">
+				<div class="col-md-10 col-md-offset-1">
+					<div role="tabpanel">
+					<ul class="nav nav-tabs" role="tablist">
+					    <li role="presentation" class="active"><a href="#money" aria-controls="money" role="tab" data-toggle="tab">Send Money</a></li>
+					    <li role="presentation"><a href="#message" aria-controls="message" role="tab" data-toggle="tab">Send Message</a></li>
+					   	<li role="presentation"><a href="#asset" aria-controls="asset" role="tab" data-toggle="tab">Transfer Asset</a></li>
+					    <li role="presentation"><a href="#lease" aria-controls="lease" role="tab" data-toggle="tab">Lease Balance</a></li>
+					    <li role="presentation"><a href="#token" aria-controls="token" role="tab" data-toggle="tab">Generate Token</a></li>
+					    <li role="presentation"><a href="#sign" aria-controls="token" role="tab" data-toggle="tab">Sign</a></li>
+					    <li role="presentation"><a href="" data-toggle="modal" data-target="#modal_cast" role="tab">Broadcast</a></li>
+
+					  </ul><br/>
+
+					  <!-- Tab panes -->
+					  <div class="tab-content">
+					    <div role="tabpanel" class="tab-pane active" id="money">
+					    	<div class="container-fluid">
+						    	<div class="form-group">
+						    		<input type="text" id="money_recipient" class="form-control" placeholder="Recipient">
+						    	</div>
+						    	<div class="form-group">
+							    	<div class="input-group">
+							    		<input type="text" id="money_amount" class="form-control" placeholder="Amount">
+							    		<span class="input-group-addon">NXT</span>
+							    	</div>
+						   		</div>
+						    	<div class="form-group">
+						    		<textarea rows="3" id="money_message" class="form-control" placeholder="Message (optional)"></textarea>
+						    	</div>
+						    	<div class="form-group">
+						    		<button id="money_create" class="btn btn-primary btn-block">Create Transaction</button>
+						    	</div>
+						    </div>
+					    </div>
+					    <div role="tabpanel" class="tab-pane" id="message">
+					    	<div class="container-fluid">
+						    	<div class="form-group">
+						    		<input type="text" id="message_recipient" class="form-control" placeholder="Recipient">
+						    	</div>
+						    	<div class="form-group">
+						    		<textarea rows="3" id="message_message" class="form-control" placeholder="Message"></textarea>
+						    	</div>
+						    	<div class="form-group">
+						    		<button id="message_create" class="btn btn-primary btn-block">Create Transaction</button>
+						    	</div>
+						    </div>
+					    </div>
+					    <div role="tabpanel" class="tab-pane" id="asset">
+					    	<div class="container-fluid">
+						    	<div class="form-group">
+						    		<input type="text" id="asset_recipient" class="form-control" placeholder="Recipient">
+						    	</div>
+						    	<div class="form-group">
+						    		<div class="input-group">
+					    				<input type="text" id="asset_name" class="form-control" placeholder="Asset Name">
+					    				<span class="input-group-btn">
+       										<button class="btn btn-info" id="asset_select" disabled type="button">Select</button>
+      									</span>
+					    			</div>
+					    			<div class="help-block" id="asset_help">Names of assets that have been created after this page was downloaded will not work.</div>
+					    		</div>
+					    		<input type="hidden" id="asset_decimals">
+						    	<div class="form-group">
+							    	<div class="input-group">
+							    		<input type="text" id="asset_amount" class="form-control" placeholder="Amount">
+							    		<span class="input-group-addon">Asset</span>
+							    	</div>
+						   		</div>
+						    	<div class="form-group">
+						    		<textarea rows="3" id="asset_message" class="form-control" placeholder="Message (optional)"></textarea>
+						    	</div>
+						    	<div class="form-group">
+						    		<button id="asset_create" class="btn btn-primary btn-block">Create Transaction</button>
+						    	</div>
+						    </div>
+					    </div>
+					    <div role="tabpanel" class="tab-pane" id="lease">
+					    	<div class="container-fluid">
+						    	<div class="form-group">
+						    		<input type="text" id="lease_recipient" class="form-control" placeholder="Recipient">
+						    	</div>
+						    	<div class="form-group">
+						    		<div class="input-group">
+					    				<input type="text" id="lease_length" class="form-control" placeholder="Length">
+					    				<span class="input-group-addon">Blocks</span>
+					    			</div>
+					    			<div class="help-block">Maximum lease length of 32767 blocks.</div>
+					    		</div>
+						    	<div class="form-group">
+						    		<textarea rows="3" id="lease_message" class="form-control" placeholder="Message (optional)"></textarea>
+						    	</div>
+						    	<div class="form-group">
+						    		<button id="lease_create" class="btn btn-primary btn-block">Create Transaction</button>
+						    	</div>
+						    </div>
+					    </div>
+					    <div role="tabpanel" class="tab-pane" id="token">
+					    	<div class="container-fluid">
+						    	<div class="form-group">
+						    		<input type="text" id="token_data" class="form-control" placeholder="Token Data">
+						    	</div>
+						    	<div class="form-group">
+						    		<button id="token_create" class="btn btn-primary btn-block">Create Token</button>
+						    	</div>
+						    </div>
+					    </div>
+					    <div role="tabpanel" class="tab-pane" id="sign">
+					    	<div class="container-fluid">
+						    	<div class="form-group">
+						    		<textarea rows="4" type="text" id="sign_data" class="form-control" placeholder="Unsigned Transaction Bytes"></textarea>
+						    	</div>
+						    	<div class="form-group">
+						    		<button id="sign_create" class="btn btn-primary btn-block">Sign Bytes</button>
+						    	</div>
+						    </div>
+					    </div>
+					  </div>
+
+					</div>
+				</div>
+			</div>
+
+		</div>
+
+
+	</div>
+
+<!-- modals: logins, -->
+
+<div class="modal fade" id="modal_new" tabindex="-1" role="dialog" aria-hidden="true">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+      		<div class="modal-header">
+       			<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        		<h4 class="modal-title" id="modal_attach_title">New Cold Storage Account</h4>
+      		</div>
+      		<div class="modal-body">
+      			<div class="form-group">
+      				<label for="modal_new_address">Nxt Address</label>
+					<input id="modal_new_address" type="text" class="form-control" readonly/>
+				</div>
+				<div class="form-group">
+					<label for="modal_new_public_key">Public Key</label>
+					<input id="modal_new_public_key" type="text" class="form-control" readonly/>
+				</div>
+				<div class="form-group">
+					<label for="modal_new_secret">Passphrase</label>
+					<textarea id="modal_new_secret" class="form-control"></textarea>
+					<div class="help-block">
+						Write down your passphrase and keep in a secure location
+					</div>
+				</div>
+      		</div>
+      		<div class="modal-footer">
+      			<div class="pull-left">
+      				<button type="button" class="btn btn-primary" id="randomize">Randomize</button>
+      			</div>
+        		<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+			</div>
+		</div>
+  	</div>
+</div>
+
+
+<div class="modal fade" id="modal_login" tabindex="-1" role="dialog" aria-hidden="true">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+      		<div class="modal-header">
+       			<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        		<h4 class="modal-title" id="modal_login_title">Login to Cold Storage Account</h4>
+      		</div>
+      		<div class="modal-body">
+      			<label>12 Word Passphrase</label>
+      			<div class="form-group">
+      				<div class="word-group">
+						<div class="form-group">
+							<input id="modal_login_passphrase" data-number="1" type="text" class="form-control word"/>
+						</div>      				
+					</div>
+					<div class="bits row container-fluid">
+						<div id="bit_1" class="col-md-1 bit" data-number="1"></div>
+						<div id="bit_2" class="col-md-1 bit" data-number="2"></div>
+						<div id="bit_3" class="col-md-1 bit" data-number="3"></div>
+						<div id="bit_4" class="col-md-1 bit" data-number="4"></div>
+						<div id="bit_5" class="col-md-1 bit" data-number="5"></div>
+						<div id="bit_6" class="col-md-1 bit" data-number="6"></div>
+						<div id="bit_7" class="col-md-1 bit" data-number="7"></div>
+						<div id="bit_8" class="col-md-1 bit" data-number="8"></div>
+						<div id="bit_9" class="col-md-1 bit" data-number="9"></div>
+						<div id="bit_10" class="col-md-1 bit" data-number="10"></div>
+						<div id="bit_11" class="col-md-1 bit" data-number="11"></div>
+						<div id="bit_12" class="col-md-1 bit" data-number="12"></div>
+
+					</div>
+				</div>
+				<div class="form-group">
+      				<label for="modal_login_address">Nxt Address</label>
+					<input id="modal_login_address" type="text" class="form-control" readonly/>
+				</div>
+
+      		</div>
+      		<div class="modal-footer">
+        		<button id="modal_login_login" type="button" class="btn btn-primary" data-dismiss="modal">Login</button>
+			</div>
+		</div>
+  	</div>
+</div>
+
+
+<div class="modal fade" id="modal_tx" tabindex="-1" role="dialog" aria-hidden="true">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+      		<div class="modal-header">
+       			<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        		<h4 class="modal-title" id="modal_attach_title">New Transaction</h4>
+      		</div>
+      		<div class="modal-body">
+      			<div class="text-center">
+	      			<div id="modal_tx_qr">
+
+	      			</div>
+      			</div>
+      			<div class="help-block">
+      				QR code for use with NxtToday or NxtVault Android applications.
+      			</div>
+				<div class="form-group">
+					<label for="modal_tx_bytes">Signed Transaction Bytes</label>
+					<textarea rows="4" id="modal_tx_bytes" class="form-control"></textarea>
+					<div class="help-block">
+						Move this text to an Online copy of Vapor to complete the transaction.
+					</div>
+				</div>
+      		</div>
+      		<div class="modal-footer">
+        		<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+			</div>
+		</div>
+  	</div>
+</div>
+
+<div class="modal fade" id="modal_token" tabindex="-1" role="dialog" aria-hidden="true">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+      		<div class="modal-header">
+       			<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        		<h4 class="modal-title" id="modal_token_title">Token Created</h4>
+      		</div>
+      		<div class="modal-body">
+      			<div class="text-center">
+	      			<div id="modal_token_qr">
+
+	      			</div>
+      			</div>
+      			<div class="help-block">
+      				QR of the token if you need one.
+      			</div>
+				<div class="form-group">
+					<label for="modal_tx_bytes">Signed Token</label>
+					<textarea rows="4" id="modal_token_token" class="form-control"></textarea>
+				</div>
+      		</div>
+      		<div class="modal-footer">
+        		<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+			</div>
+		</div>
+  	</div>
+</div>
+
+<div class="modal fade" id="modal_select" tabindex="-1" role="dialog" aria-hidden="true">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+      		<div class="modal-header">
+       			<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        		<h4 class="modal-title" id="modal_select_title">Asset Select</h4>
+      		</div>
+      		<div class="modal-body" id="modal_select_body">
+      			<div class="radio">
+				  <label>
+				    <input type="radio" name="optionsRadios" id="optionsRadios1" value="option1" checked>
+				    Option one is this and that&mdash;be sure to include why it's great
+				  </label>
+				</div>
+      		</div>
+      		<div class="modal-footer">
+        		<button type="button" class="btn btn-primary" data-dismiss="modal" id="modal_select_select">Select</button>
+			</div>
+		</div>
+  	</div>
+</div>
+
+<div class="modal fade" id="modal_cast" tabindex="-1" role="dialog" aria-hidden="true">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+      		<div class="modal-header">
+       			<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        		<h4 class="modal-title" id="modal_cast_title">Broadcast Transaction</h4>
+      		</div>
+      		<div class="modal-body">
+				<div class="form-group">
+					<label for="modal_cast_bytes">Transaction Bytes</label>
+					<textarea rows="4" id="modal_cast_bytes" class="form-control"></textarea>
+					<div class="help-block">
+						Vapor must be online in order to broadcast transactions.
+					</div>
+				</div>
+				<pre style="overflow: scroll;" id="modal_cast_info">
+				</pre>
+      		</div>
+      		<div class="modal-footer">
+        		<button type="button" class="btn btn-primary" data-dismiss="modal" id="modal_cast_cast">Broadcast</button>
+			</div>
+		</div>
+  	</div>
+</div>
+
+<div class="modal fade" id="modal_resp" tabindex="-1" role="dialog" aria-hidden="true">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+      		<div class="modal-header">
+       			<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        		<h4 class="modal-title" id="modal_resp_title">Transaction Broadcasted</h4>
+      		</div>
+      		<div class="modal-body">
+				<pre style="overflow: scroll;" id="modal_resp_data">
+				</pre>
+      		</div>
+      		<div class="modal-footer">
+        		<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+			</div>
+		</div>
+  	</div>
+</div>
+
+</body>
+</html>
