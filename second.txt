@@ -1,7 +1,6 @@
 ;
 
 
-
 var _hash = {
 		init: SHA256_init,
 		update: SHA256_write,
@@ -533,6 +532,33 @@ $("document").ready(function() {
 	});
 
 
+	$("#paper").click(function() {
+
+		var acc = $("#modal_new_address").val();
+		var pub = $("#modal_new_public_key").val();
+		var sec = $("#modal_new_secret").val();
+
+		$("#modal_new").modal("hide");
+
+		$(".container").css("display", "none");
+		$("#page_paper").css("display", "block");
+		$("#paper_account").text(acc);
+		$("#paper_address_text").html("Address: <em>"+acc+"</em>");
+		$("#paper_address_qr").empty().qrcode({"text":acc,"width":380,"height":380});
+		$("#paper_public_text").html("Public Key: <em>"+pub.substr(0, 32)+"<br/>"+pub.substr(32)+"</em>");
+		$("#paper_public_qr").empty().qrcode({"text":pub,"width":380,"height":380});
+		$("#paper_secret_text").text(sec);
+		$("#paper_secret_qr").empty().qrcode({"text":sec,"width":380,"height":380});
+	});
+
+	$("#print_button").click(function() {
+		window.print();
+	});
+
+	$("#close_button").click(function() {
+		$("#page_paper").css("display", "none");
+		$(".container").css("display", "block");
+	})
 
 })
 
@@ -555,6 +581,12 @@ $("document").ready(function() {
 
 #download {
 	color: #DFF;
+}
+
+@media print {
+	.container, .printhide {
+		display: none;
+	}
 }
 </style>
 
@@ -726,11 +758,49 @@ $("document").ready(function() {
 					</div>
 				</div>
 			</div>
-
 		</div>
-
-
 	</div>
+
+<div id="page_paper" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #FFF;display:none;">
+	<div style="width: 800px;margin: 0 auto;">
+		<h1 id="paper_account" class="page-header">NXT-ABCD-ABCD-ABCD-ABCDE</h1>
+		<div id="paper_address" style="float: left; width: 400px;">
+			<div id="paper_address_qr" class="img-responsive img-thumbnail">
+
+			</div>
+			<div id="paper_address_text" style="font-size: 14pt;text-align:center;">
+
+			</div>
+		</div>
+		<div id="paper_public" style="float: left; width: 400px;">
+			<div id="paper_public_qr" class="img-responsive img-thumbnail">
+
+			</div>
+			<div id="paper_public_text" style="text-align: center;">
+
+			</div>
+		</div>
+		<hr/>
+		<br/>
+		<div id="paper_secret" style="position: relative;top: 40px;">
+			<div id="paper_secret_qr" class="img-responsive img-thumbnail" style="width: 400px;float:left;">
+
+			</div>
+			<div  style="width: 400px;float:left;text-align:center;margin-top:150px;">
+				Secret Phrase: <strong>
+				<div id="paper_secret_text">
+
+				</div>
+				</strong>
+			</div>
+		</div>
+		<div style="width: 400px;text-align: center;position:relative;left: 400px;" class="printhide">
+			<button type="button" class="btn btn-primary" id="print_button">Print Page</button>
+			<button type="button" class="btn btn-primary" id="close_button">Close Page</button>
+		</div>
+	</div>
+</div>
+
 
 <!-- modals: logins, -->
 
@@ -755,12 +825,13 @@ $("document").ready(function() {
 					<textarea id="modal_new_secret" class="form-control"></textarea>
 					<div class="help-block">
 						Write down your passphrase and keep in a secure location
-					</div>
-				</div>
-      		</div>
-      		<div class="modal-footer">
-      			<div class="pull-left">
+					</div> 
+				</div> 
+      		</div> 
+      		<div class="modal-footer"> 
+      			<div class="pull-left"> 
       				<button type="button" class="btn btn-primary" id="randomize">Randomize</button>
+      				<button type="button" class="btn btn-primary" id="paper">Print Paper Wallet</button>
       			</div>
         		<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
 			</div>
